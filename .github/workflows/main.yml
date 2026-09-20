@@ -1,35 +1,90 @@
-name: Windows EXE Olustur
-
+name: Windows release
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
-
+permissions:
+  contents: read
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: windows-latest
-
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      SGS_DATA_DIR: ${{ runner.temp }}/sgs-state
+      MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
     steps:
-    - name: Kodları Al
-      uses: actions/checkout@v4
-
-    - name: Python'u Kur
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11' 
-
-    - name: Eklentileri Yukle
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-
-    - name: EXE'ye Donustur
-      run: |
-        pyinstaller --onefile --windowed app_main.py
-
-    - name: EXE Dosyasini Kaydet
-      uses: actions/upload-artifact@v4
-      with:
-        name: Program-Windows-EXE
-        path: dist/*.exe
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: requirements-windows.txt
+      - name: Validate version tag
+        run: |
+          $version = python -c "from core.constants import APP_VERSION; print(APP_VERSION)"
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag does not match APP_VERSION" }
+          "SGS_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Install build dependencies
+        run: |
+          python -m pip install -r requirements-windows.txt
+          if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Dependency conflict" }
+      - name: Test and build portable and installer
+        run: ./scripts/build_windows.ps1
+      - name: Verify installed application
+        run: |
+          $setup = (Resolve-Path "release/ScientificGraphStudio-$env:SGS_VERSION-Windows-x64-Setup.exe").Path
+          $install = Join-Path $env:RUNNER_TEMP "SGS Installed"
+          $process = Start-Process $setup -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", ('/DIR="' + $install + '"')) -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          ./scripts/verify_windows.ps1 -Executable "$install/ScientificGraphStudio.exe" -Report release/installed-smoke.json
+          $process = Start-Process "$install/unins000.exe" -ArgumentList @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Uninstall failed" }
+      - name: Hash release assets
+        run: |
+          Get-ChildItem release -File | Where-Object { $_.Extension -in ".exe", ".zip" } | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          } | Set-Content release/SHA256SUMS.txt -Encoding ascii
+      - name: Upload verified assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScientificGraphStudio-${{ env.SGS_VERSION }}-Windows-x64
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Diagnostic reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-diagnostics
+          path: |
+            release/*smoke.json
+            ${{ runner.temp }}/sgs-state/*.log
+          if-no-files-found: ignore
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Publish tested release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.exe release/*.zip release/SHA256SUMS.txt release/*smoke.json --verify-tag --title "Scientific Graph Studio $GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md
