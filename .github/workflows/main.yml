@@ -16,9 +16,6 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    env:
-      SGS_DATA_DIR: ${{ runner.temp }}/sgs-state
-      MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -29,6 +26,8 @@ jobs:
           cache-dependency-path: requirements-windows.txt
       - name: Validate version tag
         run: |
+          "SGS_DATA_DIR=$env:RUNNER_TEMP/sgs-state" >> $env:GITHUB_ENV
+          "MPLCONFIGDIR=$env:RUNNER_TEMP/matplotlib" >> $env:GITHUB_ENV
           $version = python -c "from core.constants import APP_VERSION; print(APP_VERSION)"
           if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag does not match APP_VERSION" }
           "SGS_VERSION=$version" >> $env:GITHUB_ENV
