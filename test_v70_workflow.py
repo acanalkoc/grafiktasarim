@@ -423,12 +423,15 @@ class TestV70ReviewerCorrections(unittest.TestCase):
 
     def test_center_pane_is_at_least_55_percent_of_width_after_layout(self):
         app = self.app
+        # Windows must process Map/Configure events, not just idle redraws.
+        # A bounded event loop allows native geometry to settle on all hosts.
+        app.after(350, app.quit)
+        app.mainloop()
         app.update_idletasks()
         app._set_equal_panes()
         app.update_idletasks()
         total_width = app.main_pane.winfo_width()
-        if total_width < 100:
-            self.skipTest("window not realized under this Tk backend")
+        self.assertGreaterEqual(total_width, 100, "Native window did not realize")
         sash0 = app.main_pane.sashpos(0)
         has_right = hasattr(app, "object_dock") and str(app.object_dock) in app.main_pane.panes()
         sash1 = app.main_pane.sashpos(1) if has_right else total_width

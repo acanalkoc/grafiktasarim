@@ -278,6 +278,19 @@ class GuiAuditTests(unittest.TestCase):
             app._load_from_path(str(path))
         self.assertEqual(app._capture_state(), before)
 
+    def test_failed_project_load_does_not_depend_on_stdout_encoding(self):
+        import io
+        app = self.app
+        before = copy.deepcopy(app._capture_state())
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "invalid.gpj"
+            atomic_json_write(path, {"format": "grafik_projesi", "rows": [1]})
+            with io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict") as output:
+                with patch("sys.stdout", output), self.assertLogs("gui.main_window", level="WARNING") as logs:
+                    app._load_from_path(str(path))
+            self.assertIn("Geçersiz satırlar", logs.output[0])
+        self.assertEqual(app._capture_state(), before)
+
     def test_table_has_keyboard_exit_and_child_undo(self):
         win = self.table()
         self.assertTrue(win.table.bind("<Control-Tab>"))

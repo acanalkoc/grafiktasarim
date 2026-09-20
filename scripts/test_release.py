@@ -11,4 +11,10 @@ MODULES = ["test_v63_panels", "test_v62_workspace", "test_suite",
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromNames(MODULES)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
+    for test, detail in result.failures + result.errors:
+        # Surface concrete test errors in Actions annotations, not just exit 1.
+        text = (str(test) + "\n" + detail).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print("::error::" + text, flush=True)
+    for test, reason in result.skipped:
+        print("::error::Release gate rejects skipped test: " + str(test) + " " + reason, flush=True)
     raise SystemExit(0 if result.wasSuccessful() and not result.skipped else 1)

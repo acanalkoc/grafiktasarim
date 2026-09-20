@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import logging
 import math
 import os
 import subprocess
@@ -2936,7 +2937,7 @@ class ScientificGraphStudio(tk.Tk):
             if self.winfo_viewable():
                 messagebox.showerror("Veri Yükleme Hatası", str(exc), parent=self)
             else:
-                print(f"[Veri Yükleme Hatası] {exc}")
+                logging.getLogger(__name__).warning("Data load failed: %s", exc)
 
     def _on_sheet_selected(self, _event=None) -> None:
         if self.excel_path:
@@ -6029,7 +6030,7 @@ class ScientificGraphStudio(tk.Tk):
             if self.winfo_viewable():
                 messagebox.showerror("Proje Açma Hatası" if get_language() == "TR" else "Project Load Error", str(exc), parent=self)
             else:
-                print(f"[Proje Hatası] {exc}")
+                logging.getLogger(__name__).warning("Project load failed: %s", exc)
 
     def open_project(self) -> None:
         if not self._confirm_discard():
